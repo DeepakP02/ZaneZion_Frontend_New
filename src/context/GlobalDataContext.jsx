@@ -4057,11 +4057,9 @@ export const GlobalDataProvider = ({ children }) => {
   };
 
   const normalizeDeliveryDbId = (d) => {
-    if (d?.db_id != null && /^\d+$/.test(String(d.db_id)))
-      return Number(d.db_id);
-    if (d?.id != null && /^\d+$/.test(String(d.id))) return Number(d.id);
-    const digits = String(d?.id ?? "").replace(/\D/g, "");
-    return digits ? parseInt(digits, 10) : null;
+    if (d?.db_id != null && d.db_id !== "") return d.db_id;
+    if (d?.id != null && d.id !== "") return d.id;
+    return null;
   };
 
   const toApiDeliveryStatus = (s) => {
@@ -4113,23 +4111,22 @@ export const GlobalDataProvider = ({ children }) => {
         delivery_fee: updated.delivery_fee !== '' ? updated.delivery_fee : 0,
         mode: updated.mode || null,
       };
-      if (updated.driver != null || updated.driver_name != null) {
-        patchBody.driver_name = updated.driver ?? updated.driver_name ?? "";
+      if (updated.driver !== undefined || updated.driver_name !== undefined) {
+        patchBody.driver_name = updated.driver ?? updated.driver_name ?? null;
+        patchBody.driver = patchBody.driver_name; // for mock API compatibility
       }
-      if (updated.vehicleId != null || updated.plate_number != null) {
-        patchBody.plate_number =
-          updated.vehicleId ?? updated.plate_number ?? "";
+      if (updated.vehicleId !== undefined || updated.plate_number !== undefined) {
+        patchBody.plate_number = updated.vehicleId ?? updated.plate_number ?? null;
       }
-      const assignId =
-        updated.assigned_driver ?? updated.driverId ?? updated.driver_id;
-      if (assignId != null && assignId !== "" && assignId !== undefined) {
+      const assignId = updated.assigned_driver !== undefined ? updated.assigned_driver : (updated.driverId !== undefined ? updated.driverId : updated.driver_id);
+      if (assignId !== undefined) {
         const n = Number(assignId);
-        patchBody.assigned_driver =
-          Number.isFinite(n) && !Number.isNaN(n) ? n : assignId;
+        patchBody.assigned_driver = (assignId !== null && Number.isFinite(n) && !Number.isNaN(n)) ? n : assignId;
+        patchBody.driverId = patchBody.assigned_driver; // for mock API compatibility
       }
       
-      console.log('Sending patch to /logistics/deliveries/' + patchId + '/status', patchBody);
-      const res = await api.patch(`/logistics/deliveries/${patchId}/status`, patchBody);
+      console.log('Sending patch to /logistics/deliveries/' + patchId, patchBody);
+      const res = await api.patch(`/logistics/deliveries/${patchId}`, patchBody);
       console.log('Patch response:', res.data);
 
       await fetchDeliveries();
@@ -4245,7 +4242,7 @@ export const GlobalDataProvider = ({ children }) => {
       const numericId =
         typeof id === "string" && id.includes("-") ? id.split("-")[1] : id;
 
-      await api.patch(`/logistics/deliveries/${numericId}/status`, {
+      await api.patch(`/logistics/deliveries/${numericId}`, {
         status: "delivered",
         signature,
       });
@@ -5632,9 +5629,9 @@ export const GlobalDataProvider = ({ children }) => {
 
   const fetchPayHistory = React.useCallback(async () => {
     try {
-      const res = await api.get("/finance/my-payroll");
+      const res = await api.get("/finance/payroll");
       if (res.data?.success) {
-        const mapped = res.data.data.map((p) => ({
+        const mapped = (res.data.data || []).map((p) => ({
           id: p.id,
           period: new Date(p.payment_date || p.created_at).toLocaleDateString(
             "en-US",
@@ -5642,10 +5639,10 @@ export const GlobalDataProvider = ({ children }) => {
           ),
           date: (p.payment_date || p.created_at)?.split("T")[0],
           hours: p.hours || "Variable",
-          total: `$${parseFloat(p.net_amount || p.amount || 0).toLocaleString()}`,
+          total: `$${parseFloat(p.net_amount || p.netAmount || p.amount || 0).toLocaleString()}`,
           status: p.status || "Processed",
-          userId: p.user_id,
-          userName: p.user_name,
+          userId: p.user_id || p.userId,
+          userName: p.user_name || p.userName,
         }));
         setPayHistory(mapped);
       }
@@ -5653,6 +5650,7 @@ export const GlobalDataProvider = ({ children }) => {
       console.error("Failed to fetch pay history:", error);
     }
   }, []);
+
 
   const deleteLuxuryItem = async (id) => {
     try {
@@ -5681,7 +5679,7 @@ export const GlobalDataProvider = ({ children }) => {
         throw new Error("No delivery selected for dispatch.");
       }
 
-      await api.patch(`/logistics/deliveries/${deliveryDbId}/status`, {
+      await api.patch(`/logistics/deliveries/${deliveryDbId}`, {
         status: "en_route",
         vehicle_id: data.db_id, // Ensure it's assigned if not already
         route_id: data.routeId || null,
@@ -6048,7 +6046,7 @@ export const GlobalDataProvider = ({ children }) => {
         patch.assigned_driver =
           Number.isFinite(n) && !Number.isNaN(n) ? n : driverUid;
       }
-      await api.patch(`/logistics/deliveries/${updated.id}/status`, patch);
+      await api.patch(`/logistics/deliveries/${updated.id}`, patch);
       await fetchChauffeurRequests();
       await fetchDeliveries();
       addLog({

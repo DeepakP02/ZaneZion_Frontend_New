@@ -814,6 +814,12 @@ export const GlobalDataProvider = ({ children }) => {
       .trim()
       .toLowerCase();
 
+    // Staff role bypasses for core operational screens
+    if (role === "procurement" && PROCUREMENT_FULL_CRUD_MENUS.has(key)) return true;
+    if (role === "inventory" && INVENTORY_FULL_CRUD_MENUS.has(key)) return true;
+    if (role === "logistics" && LOGISTICS_FULL_CRUD_MENUS.has(key)) return true;
+    if (role === "concierge" && CONCIERGE_FULL_CRUD_MENUS.has(key)) return true;
+
     // If no permissions loaded, deny by default (secure fallback)
     if (!menuPermissions || menuPermissions.length === 0) return false;
     const perm = menuPermissions.find(
@@ -2287,13 +2293,13 @@ export const GlobalDataProvider = ({ children }) => {
           ? res.data
           : [];
       const mapped = (luxuryData || []).map((item) => ({
-        id: item.id,
-        item: item.item_name,
-        owner: item.owner_name,
-        vault: item.vault_location,
-        status: item.status,
-        value: item.estimated_value,
-        notes: item.notes,
+        id: item.id || item.itemId,
+        item: item.item_name || item.name || 'Unknown Item',
+        owner: item.owner_name || item.owner || 'Unknown Beneficiary',
+        vault: item.vault_location || item.vault || 'Vault Alpha',
+        status: item.status || 'Stored',
+        value: item.estimated_value || item.value || item.price || 0,
+        notes: item.notes || '',
       }));
       setLuxuryItems(filterDataForCurrentUser(mapped));
     } catch (e) {

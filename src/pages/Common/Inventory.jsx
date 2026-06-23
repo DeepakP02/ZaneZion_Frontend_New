@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { swalSuccess, swalError, swalWarning, swalInfo, swalConfirm, swalCredentials, swalCopied } from '../../utils/swal';
 import Table from '../../components/Table';
 import KpiCard from '../../components/KpiCard';
@@ -38,6 +39,7 @@ function isSaaSPortfolioClient(c) {
 
 const Inventory = () => {
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { data: warehousesData } = useWarehouses();
   const warehouses = warehousesData?.data?.warehouses || warehousesData?.warehouses || [];
 
@@ -56,15 +58,17 @@ const Inventory = () => {
   const realInventory = (itemsData?.items || itemsData?.data || []).map(i => {
     let totalQty = 0;
     let mainLoc = '';
-    if (i.inventoryStock && Array.isArray(i.inventoryStock)) {
+    if (i.inventoryStock && Array.isArray(i.inventoryStock) && i.inventoryStock.length > 0) {
       totalQty = i.inventoryStock.reduce((sum, stock) => sum + (stock.quantity || 0), 0);
-      if (i.inventoryStock.length > 0) mainLoc = i.inventoryStock[0].warehouseId;
+      mainLoc = i.inventoryStock[0].warehouseId;
+    } else {
+      totalQty = i.qty ?? i.quantity ?? i.total_quantity ?? 0;
     }
     return {
       ...i,
       qty: totalQty,
-      price: i.price || 0,
-      location: mainLoc || 'General Storage',
+      price: i.price ?? i.unit_price ?? i.unitPrice ?? 0,
+      location: (warehouses.find(w => String(w.id) === String(mainLoc))?.name) || mainLoc || i.warehouse_name || i.warehouseId || 'General Storage',
       inventoryType: i.inventoryType === 'INTERNAL' ? 'Marketplace' : (i.inventoryType || 'Marketplace')
     };
   });
@@ -165,10 +169,10 @@ const Inventory = () => {
         i.issuedTo === currentUser?.name
       );
     }
-    if (activeTab === 'Marketplace') return (i.inventoryType || 'Marketplace') === 'Marketplace';
+    if (activeTab === 'Marketplace') return (i.type || 'Marketplace') === 'Marketplace';
     const owner = clientListForSelect.find((c) => String(c.id) === String(i.clientId));
-    if (activeTab === 'Business') return (i.inventoryType || 'Marketplace') === 'Client' && isBusinessPortfolioClient(owner);
-    if (activeTab === 'SaaS') return (i.inventoryType || 'Marketplace') === 'Client' && isSaaSPortfolioClient(owner);
+    if (activeTab === 'Business') return (i.type || 'Marketplace') === 'Business' && isBusinessPortfolioClient(owner);
+    if (activeTab === 'SaaS') return (i.type || 'Marketplace') === 'SaaS' && isSaaSPortfolioClient(owner);
     return false;
   });
 
@@ -268,7 +272,11 @@ const Inventory = () => {
       const wh = warehouses.find(w => w.name === whName);
       setFormData({
         ...item,
-        category: normalizeToMarketplaceCategory(item?.category),
+        item: item?.name || '',
+        category: typeof item?.category === 'object' && item?.category !== null ? item.category.name : (item?.category || ''),
+        categoryId: item?.categoryId || item?.category?.id || '',
+        unitId: item?.unitId || item?.unit?.id || '',
+        unit: typeof item?.unit === 'object' && item?.unit !== null ? item.unit.name : (item?.unit || ''),
         warehouse: whName,
         warehouseId: wh ? wh.id : (item?.warehouse_id || null),
         size: item?.size || '',
@@ -280,18 +288,29 @@ const Inventory = () => {
     }
     setIsModalOpen(true);
   };
-
   const handleSave = async () => {
     if (isSaving) return;
     setIsSaving(true);
     try {
       if (modalType === 'entry') {
+        let wid = formData.warehouseId ?? formData.warehouse_id;
+        
+        // Fix state desync: If wid is missing but the UI shows a warehouse name, find the ID automatically
+        if (!wid && formData.warehouse && warehouses && warehouses.length > 0) {
+          const matchedWarehouse = warehouses.find(w => w.name === formData.warehouse);
+          if (matchedWarehouse) wid = matchedWarehouse.id;
+        }
+
+        if (!wid) {
+          swalWarning('Missing Warehouse', 'You must create at least one Warehouse before adding stock.');
+          setIsSaving(false);
+          return;
+        }
         if ((formData.inventoryType || 'Marketplace') === 'Client' && !String(formData.clientId || '').trim()) {
           swalWarning('Client owner required', 'Please select the inventory owner before saving.');
           setIsSaving(false);
           return;
         }
-        const wid = formData.warehouseId ?? formData.warehouse_id;
         if (wid == null || String(wid).trim() === '' || Number.isNaN(Number(wid)) || Number(wid) < 0) {
           swalWarning('Warehouse required', 'Choose a warehouse from the list so the item is stored under a valid bin. Empty warehouse IDs cause the server to reject the save.');
           setIsSaving(false);
@@ -321,7 +340,6 @@ const Inventory = () => {
 
           let res;
           try {
-            const wid = formData.warehouseId ?? formData.warehouse_id;
             const apiPayload = {
               name: formData.item.trim(),
               categoryId: catId,
@@ -336,6 +354,7 @@ const Inventory = () => {
             const apiRes = await realApi.post('/items', apiPayload);
             console.log('[REAL_API_SUCCESS] Item created successfully via real API');
             res = { ok: true, data: apiRes.data };
+            await queryClient.invalidateQueries({ queryKey: ['items'] });
           } catch (e) {
             console.warn('[REAL_API_FAILED] Item creation via real API failed', e);
             res = { ok: false, error: 'Failed to create item' };
@@ -414,17 +433,24 @@ const Inventory = () => {
 
         const catId = parseInt(formData.categoryId, 10);
         const uId = parseInt(formData.unitId, 10);
+        const whObj = warehouses.find(w => w.name === formData.location);
+        const whId = whObj ? whObj.id : (formData.warehouseId || formData.warehouse_id || 1);
 
         try {
           const apiPayload = {
             name: formData.item.trim(),
-            description: formData.description || ''
+            description: formData.description || '',
+            price: Number(formData.price) || 0,
+            qty: Number(formData.qty) || 0,
+            warehouseId: Number(whId)
           };
           if (!isNaN(catId) && catId > 0) apiPayload.categoryId = catId;
           if (!isNaN(uId) && uId > 0) apiPayload.unitId = uId;
 
           await realApi.put(`/items/${formData.id}`, apiPayload);
           console.log('[REAL_API_SUCCESS] Item updated successfully via real API');
+          await queryClient.invalidateQueries({ queryKey: ['items'] });
+          swalSuccess('Success', 'Item updated successfully.');
         } catch (e) {
           console.warn('[REAL_API_FAILED] Item update via real API failed', e);
           swalWarning('Error', 'Failed to update item.');
@@ -433,6 +459,7 @@ const Inventory = () => {
         try {
           await realApi.delete(`/items/${selectedItem.id}`);
           console.log('[REAL_API_SUCCESS] Item deleted successfully via real API');
+          queryClient.invalidateQueries({ queryKey: ['items'] });
         } catch (e) {
           console.warn('[REAL_API_FAILED] Item deletion via real API failed', e);
           swalWarning('Error', 'Failed to delete item.');
@@ -461,6 +488,7 @@ const Inventory = () => {
         warehouseId: wid,
       };
       await realApi.post('/items', apiPayload);
+      queryClient.invalidateQueries({ queryKey: ['items'] });
       swalSuccess('Received', 'Asset instantly secured in warehouse ledger.');
       // Update PR status locally if possible
       if (pr.id && window.updatePurchaseRequest) {
@@ -483,6 +511,8 @@ const Inventory = () => {
         remarks: `Auto-issued for Mission to ${prj.client}`
       });
       console.log('Stock deducted');
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      queryClient.invalidateQueries({ queryKey: ['stock'] });
     } catch(e) {
       console.warn('Stock adjust failed on real API', e);
     }
@@ -617,8 +647,8 @@ const Inventory = () => {
                   onView={(item) => handleAction('view', item)}
                   onEdit={(item) => handleAction('edit', item)}
                   onDelete={(item) => handleAction('delete', item)}
-                  canEdit={hasMenuPermission('Inventory', 'can_edit')}
-                  canDelete={hasMenuPermission('Inventory', 'can_delete')}
+                  canEdit={isAdmin || hasMenuPermission('Inventory', 'can_edit')}
+                  canDelete={isAdmin || hasMenuPermission('Inventory', 'can_delete')}
                   customAction={(item) => (
                     <div className="flex items-center gap-1">
                       <button
@@ -1326,8 +1356,8 @@ const Inventory = () => {
                   <label className="text-[10px] font-bold text-muted uppercase">Asset Name</label>
                   <input
                     type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    value={formData.item || formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value, item: e.target.value })}
                     className="w-full bg-background border border-border rounded-lg px-4 py-2 text-sm focus:border-accent outline-none font-bold"
                     disabled={modalType === 'view'}
                   />
@@ -1363,17 +1393,14 @@ const Inventory = () => {
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-muted uppercase">Category</label>
                   <select
-                    value={(() => {
-                      const opts = marketplaceCategorySelectOptions(formData.category);
-                      const v = String(formData.category ?? '').trim() || 'General';
-                      return opts.includes(v) ? v : 'General';
-                    })()}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    value={formData.categoryId || ''}
+                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
                     className="w-full bg-background border border-border rounded-lg px-4 py-2 text-sm focus:border-accent outline-none font-bold"
                     disabled={modalType === 'view'}
                   >
-                    {marketplaceCategorySelectOptions(formData.category).map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                    <option value="">Select Category</option>
+                    {apiCategories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
                 </div>
@@ -1439,16 +1466,15 @@ const Inventory = () => {
                 <div className="space-y-1 text-xs">
                   <label className="text-[10px] font-bold text-muted uppercase">Measurement Unit</label>
                   <select
-                    value={formData.unit || 'Unit'}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    value={formData.unitId || ''}
+                    onChange={(e) => setFormData({ ...formData, unitId: e.target.value })}
                     className="w-full bg-background border border-border rounded-lg px-4 py-2 text-sm focus:border-accent outline-none"
                     disabled={modalType === 'view'}
                   >
-                    <option>Unit</option>
-                    <option>Case</option>
-                    <option>LB</option>
-                    <option>KG</option>
-                    <option>Gallon</option>
+                    <option value="">Select Unit</option>
+                    {apiUnits.map((u) => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>
+                    ))}
                   </select>
                 </div>
                 <div className="col-span-1 sm:col-span-2 space-y-1">

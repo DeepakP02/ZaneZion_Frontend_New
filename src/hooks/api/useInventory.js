@@ -15,7 +15,7 @@ export const useItemCategories = () => {
   return useQuery({
     queryKey: ['itemCategories'],
     queryFn: async () => {
-      const res = await api.get('/item-categories');
+      const res = await api.get('/item-categories', { params: { limit: 100 } });
       return res.data?.data || [];
     }
   });
@@ -25,7 +25,7 @@ export const useItemUnits = () => {
   return useQuery({
     queryKey: ['itemUnits'],
     queryFn: async () => {
-      const res = await api.get('/item-units');
+      const res = await api.get('/item-units', { params: { limit: 100 } });
       return res.data?.data || [];
     }
   });

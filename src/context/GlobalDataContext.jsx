@@ -791,7 +791,6 @@ export const GlobalDataProvider = ({ children }) => {
     "routes",
     "urgent",
   ]);
-  /** Concierge role should always be able to create/manage their core service menus. */
   const CONCIERGE_FULL_CRUD_MENUS = new Set([
     "orders",
     "events",

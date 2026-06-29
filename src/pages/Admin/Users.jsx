@@ -559,8 +559,8 @@ const Users = () => {
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {[
-              { label: 'Field Staff Available', val: users.filter(u => getRoleName(u) === 'FIELD_STAFF' && u.isAvailable).length, color: 'text-success', bg: 'bg-success/10 border-success/20', icon: CheckCircle2 },
-              { label: 'Field Staff Offline', val: users.filter(u => getRoleName(u) === 'FIELD_STAFF' && !u.isAvailable).length, color: 'text-danger', bg: 'bg-danger/10 border-danger/20', icon: XCircle },
+              { label: 'Field Staff Available', val: users.filter(u => (getRoleName(u) === 'STAFF' || getRoleName(u) === 'FIELD_STAFF') && u.isAvailable).length, color: 'text-success', bg: 'bg-success/10 border-success/20', icon: CheckCircle2 },
+              { label: 'Field Staff Offline', val: users.filter(u => (getRoleName(u) === 'STAFF' || getRoleName(u) === 'FIELD_STAFF') && !u.isAvailable).length, color: 'text-danger', bg: 'bg-danger/10 border-danger/20', icon: XCircle },
               { label: 'On Leave Today', val: leaveRequests.filter(r => r.status === 'Approved' && new Date(r.end) >= new Date()).length, color: 'text-warning', bg: 'bg-warning/10 border-warning/20', icon: Calendar },
               { label: 'Active Assignments', val: staffAssignments.filter(a => a.status === 'In Progress' || a.status === 'En Route').length, color: 'text-accent', bg: 'bg-accent/10 border-accent/20', icon: Radio },
             ].map((stat, i) => (
@@ -580,7 +580,7 @@ const Users = () => {
               <Truck size={18} className="text-accent" /> Field Staff — Live Availability
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {users.filter(u => getRoleName(u) === 'FIELD_STAFF' || getRoleName(u) === 'Field Staff').map(user => {
+              {users.filter(u => getRoleName(u) === 'STAFF' || getRoleName(u) === 'FIELD_STAFF' || getRoleName(u) === 'Field Staff').map(user => {
                 const activeTask = staffAssignments.find(a => (a.assigneeId === String(user.id) || a.assignee === user.name) && (a.status === 'In Progress' || a.status === 'En Route' || a.status === 'Pending'));
                 const onLeave = leaveRequests.find(r => (r.userId === user.id || r.name === user.name) && r.status === 'Approved' && new Date(r.end) >= new Date());
                 return (
@@ -635,7 +635,7 @@ const Users = () => {
                   </div>
                 );
               })}
-              {users.filter(u => getRoleName(u) === 'FIELD_STAFF' || getRoleName(u) === 'Field Staff').length === 0 && (
+              {users.filter(u => getRoleName(u) === 'STAFF' || getRoleName(u) === 'FIELD_STAFF' || getRoleName(u) === 'Field Staff').length === 0 && (
                 <p className="col-span-3 text-center text-secondary italic py-8">No Field Staff registered.</p>
               )}
             </div>
@@ -647,7 +647,7 @@ const Users = () => {
               <Briefcase size={18} className="text-accent" /> Operational Staff — Office Status
             </h3>
             <div className="space-y-3">
-              {users.filter(u => getRoleName(u) === 'OPERATIONS' || getRoleName(u) === 'Operational Staff' || (!['FIELD_STAFF', 'Field Staff', 'Super Admin', 'SUPER_ADMIN', 'Client'].includes(getRoleName(u)))).map(user => {
+              {users.filter(u => getRoleName(u) === 'OPERATIONS' || getRoleName(u) === 'Operational Staff' || (!['STAFF', 'FIELD_STAFF', 'Field Staff', 'Super Admin', 'SUPER_ADMIN', 'Client'].includes(getRoleName(u)))).map(user => {
                 const pendingLeave = leaveRequests.find(r => (r.userId === user.id || r.name === user.name) && r.status === 'Pending');
                 const approvedLeave = leaveRequests.find(r => (r.userId === user.id || r.name === user.name) && r.status === 'Approved' && new Date(r.end) >= new Date());
                 return (
